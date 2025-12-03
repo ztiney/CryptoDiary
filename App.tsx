@@ -1,8 +1,22 @@
-
 import React, { useState, useEffect } from 'react';
 import TradeCalculator from './components/TradeCalculator';
 import Calendar from './components/Calendar';
 import { TradeRecord, CryptoPrice } from './types';
+import { 
+  Wallet, 
+  TrendingUp, 
+  TrendingDown, 
+  RefreshCw, 
+  NotebookPen, 
+  FileText, 
+  Copy, 
+  Trash2, 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  Clock,
+  CheckCircle,
+  Activity
+} from 'lucide-react';
 
 const App: React.FC = () => {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
@@ -10,22 +24,23 @@ const App: React.FC = () => {
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [markdownContent, setMarkdownContent] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const addTrade = (trade: TradeRecord) => {
     setTrades([trade, ...trades]);
   };
 
   const removeTrade = (id: string) => {
-    setTrades(trades.filter(t => t.id !== id));
+    if(confirm('确定要删除这条记录吗？')) {
+      setTrades(trades.filter(t => t.id !== id));
+    }
   };
 
   const updateTradeNote = (id: string, note: string) => {
     setTrades(trades.map(t => t.id === id ? { ...t, note } : t));
   };
 
-  // Logic to refresh prices for HOLDING trades
   const refreshPrices = async () => {
-    // Only refresh holding trades that have a coinId
     const holdingWithIds = trades.filter(t => t.status === 'HOLDING' && t.coinId);
     if (holdingWithIds.length === 0) return;
 
@@ -41,12 +56,10 @@ const App: React.FC = () => {
         const data: CryptoPrice[] = await response.json();
         const priceMap = new Map(data.map(c => [c.id, c.current_price]));
 
-        // Update trades with new prices and recalculate PnL/ROI
         setTrades(prevTrades => prevTrades.map(trade => {
           if (trade.status === 'HOLDING' && trade.coinId && priceMap.has(trade.coinId)) {
             const currentPrice = priceMap.get(trade.coinId)!;
             
-            // Recalculate Logic (Same as in Calculator)
             let pnl = 0;
             let roi = 0;
             
@@ -67,7 +80,7 @@ const App: React.FC = () => {
 
             return {
               ...trade,
-              exitPrice: currentPrice, // Update "Exit Price" to mean "Current Price" for holdings
+              exitPrice: currentPrice,
               pnl,
               roi
             };
@@ -82,13 +95,11 @@ const App: React.FC = () => {
     }
   };
 
-  // Auto Refresh Interval
   useEffect(() => {
-    const interval = setInterval(refreshPrices, 60000); // 60s
+    const interval = setInterval(refreshPrices, 60000);
     return () => clearInterval(interval);
-  }, [trades]); // Dependency on trades to ensure we have latest list
+  }, [trades]);
 
-  // Split trades
   const closedTrades = trades.filter(t => t.status === 'CLOSED');
   const holdingTrades = trades.filter(t => t.status === 'HOLDING');
 
@@ -97,49 +108,45 @@ const App: React.FC = () => {
 
   const generateMarkdown = () => {
     const date = new Date().toLocaleDateString('zh-CN');
-    let md = `# 📅 交易日记 - ${date}\n\n`;
+    let md = `# 📅 交易复盘日记 - ${date}\n\n`;
     
-    // Add Daily Summary
-    md += `## 📝 今日复盘\n`;
+    md += `## 📝 今日总结\n`;
     md += `${dailySummary || '（今日暂无详细总结）'}\n\n`;
     
-    // Stats (Realized)
     const realizedPnL = calculateTotalRealizedPnL();
     const unrealizedPnL = calculateTotalUnrealizedPnL();
     const winRate = closedTrades.length > 0 
       ? (closedTrades.filter(t => t.pnl > 0).length / closedTrades.length * 100).toFixed(1) 
       : 0;
 
-    md += `## 📊 账户统计\n`;
+    md += `## 📊 账户概览\n`;
     md += `- **已实现盈亏 (Realized)**: ${realizedPnL >= 0 ? '+' : ''}$${realizedPnL.toFixed(2)}\n`;
-    md += `- **未实现盈亏 (Unrealized)**: ${unrealizedPnL >= 0 ? '+' : ''}$${unrealizedPnL.toFixed(2)}\n`;
-    md += `- **胜率 (仅平仓)**: ${winRate}%\n`;
-    md += `- **交易笔数**: 已平仓 ${closedTrades.length} | 持仓中 ${holdingTrades.length}\n\n`;
+    md += `- **持仓浮盈 (Unrealized)**: ${unrealizedPnL >= 0 ? '+' : ''}$${unrealizedPnL.toFixed(2)}\n`;
+    md += `- **胜率**: ${winRate}%\n\n`;
 
-    // Function to render table
     const renderTable = (list: TradeRecord[]) => {
-      let table = `| 币种 | 类型 | 价格 (开/现) | 投入/杠杆 | 盈亏 | 备注 |\n`;
+      let table = `| 标的 | 方向 | 价格(入/出) | 投入/杠杆 | 盈亏 | 心得 |\n`;
       table += `|---|---|---|---|---|---|\n`;
       list.forEach(t => {
         const pnlIcon = t.pnl >= 0 ? '🟢' : '🔴';
-        const directionStr = t.direction === 'LONG' ? '做多' : '做空';
-        const typeStr = t.type === 'SPOT' ? '现货' : '合约';
-        const prices = `$${t.entryPrice} / $${t.exitPrice}`;
+        const dirIcon = t.direction === 'LONG' ? '📈 多' : '📉 空';
+        const typeLabel = t.type === 'SPOT' ? '现货' : '合约';
+        const prices = `$${t.entryPrice} ➝ $${t.exitPrice}`;
         const size = t.type === 'FUTURES' ? `${t.leverage}x` : `$${t.amount}`;
         const note = t.note ? t.note.replace(/\n/g, ' ') : '-';
-        table += `| **${t.symbol}** | ${typeStr} ${directionStr} | ${prices} | ${size} | ${pnlIcon} $${t.pnl.toFixed(2)} | ${note} |\n`;
+        table += `| **${t.symbol}** | ${typeLabel} ${dirIcon} | ${prices} | ${size} | ${pnlIcon} $${t.pnl.toFixed(2)} | ${note} |\n`;
       });
       return table;
     };
 
     if (closedTrades.length > 0) {
-      md += `## ✅ 已平仓交易 (Closed)\n`;
+      md += `## ✅ 已平仓 (Closed)\n`;
       md += renderTable(closedTrades);
       md += `\n`;
     }
 
     if (holdingTrades.length > 0) {
-      md += `## ⏳ 当前持仓/挂单 (Holding)\n`;
+      md += `## ⏳ 持仓中 (Holding)\n`;
       md += renderTable(holdingTrades);
       md += `\n`;
     }
@@ -152,33 +159,64 @@ const App: React.FC = () => {
     setShowMarkdown(true);
   };
 
+  const handleCopy = () => {
+    navigator.clipboard.writeText(markdownContent);
+    setCopySuccess(true);
+    setTimeout(() => setCopySuccess(false), 2000);
+  };
+
   const TradeCard = ({ trade }: { trade: TradeRecord }) => (
-    <div className={`p-4 transition-colors border-l-4 ${trade.status === 'HOLDING' ? 'bg-blue-900/10 border-blue-500 hover:bg-blue-900/20' : 'bg-gray-800/30 border-gray-600 hover:bg-gray-800/50'}`}>
+    <div className={`group relative p-4 transition-all border-l-4 rounded-r-lg mb-2 ${
+      trade.status === 'HOLDING' 
+        ? 'bg-gradient-to-r from-blue-900/10 to-transparent border-blue-500 hover:from-blue-900/20' 
+        : 'bg-crypto-card border-gray-600 hover:bg-gray-800'
+    }`}>
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-center gap-3">
-            <span className="font-bold text-lg text-white">{trade.symbol}</span>
-            <span className={`text-xs px-2 py-0.5 rounded font-medium ${trade.direction === 'LONG' ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}`}>
-              {trade.type === 'FUTURES' ? (trade.direction === 'LONG' ? '做多' : '做空') : '现货'}
-            </span>
-            {trade.status === 'HOLDING' && (
-              <span className="flex items-center gap-1 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
-                持仓中
-                {trade.coinId && <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-green-300"></span>}
-              </span>
-            )}
-            <span className="text-xs text-gray-500">
-              {trade.type === 'FUTURES' ? `${trade.leverage}x` : `投入: $${trade.amount}`}
-            </span>
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              trade.symbol === 'BTC' ? 'bg-orange-500 text-white' : 
+              trade.symbol === 'ETH' ? 'bg-indigo-500 text-white' : 'bg-gray-700 text-gray-300'
+            }`}>
+              {trade.symbol.substring(0, 1)}
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-white">{trade.symbol}</span>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex items-center gap-1 ${
+                  trade.direction === 'LONG' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-rose-900/50 text-rose-400'
+                }`}>
+                  {trade.direction === 'LONG' ? <ArrowUpRight size={10} /> : <ArrowDownRight size={10} />}
+                  {trade.type === 'FUTURES' ? `${trade.leverage}x` : '现货'}
+                </span>
+              </div>
+              <div className="text-[10px] text-gray-500 mt-0.5">
+                {new Date(trade.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </div>
+            </div>
         </div>
-        <div className={`text-right font-mono font-bold ${trade.pnl >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
-          {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)} USD
-          <div className="text-[10px] text-gray-500 font-normal">ROI: {trade.roi.toFixed(2)}%</div>
+        
+        <div className="text-right">
+          <div className={`font-mono font-bold flex items-center justify-end gap-1 ${trade.pnl >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
+            {trade.pnl >= 0 ? '+' : ''}{trade.pnl.toFixed(2)}
+            <span className="text-[10px] text-gray-500">USD</span>
+          </div>
+          <div className={`text-[10px] font-medium ${trade.roi >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {trade.roi.toFixed(2)}%
+          </div>
         </div>
       </div>
       
-      <div className="flex gap-4 text-xs text-gray-400 mb-3">
-        <span>开: <span className="text-gray-300">${trade.entryPrice}</span></span>
-        <span>{trade.status === 'HOLDING' ? '现/预:' : '平:'} <span className="text-gray-300">${trade.exitPrice}</span></span>
+      <div className="flex items-center justify-between bg-gray-900/50 rounded p-2 mb-3 text-xs">
+        <div>
+          <span className="text-gray-500">入:</span> <span className="text-gray-300 font-mono">${trade.entryPrice}</span>
+        </div>
+        <div className="text-gray-600">➜</div>
+        <div>
+          <span className="text-gray-500">{trade.status === 'HOLDING' ? '现' : '出'}:</span> 
+          <span className={`ml-1 font-mono ${trade.status === 'HOLDING' ? 'text-blue-300 font-bold' : 'text-gray-300'}`}>
+            ${trade.exitPrice}
+          </span>
+        </div>
       </div>
 
       <div className="relative">
@@ -186,54 +224,62 @@ const App: React.FC = () => {
             type="text"
             value={trade.note}
             onChange={(e) => updateTradeNote(trade.id, e.target.value)}
-            placeholder="添加心得/备注..."
-            className="w-full bg-gray-900/50 border border-gray-700 rounded px-3 py-2 text-sm text-gray-300 focus:border-crypto-accent focus:outline-none transition-colors"
+            placeholder="添加心得备注..."
+            className="w-full bg-gray-900/30 border border-gray-700/50 rounded px-2 py-1.5 text-xs text-gray-300 focus:border-crypto-accent focus:bg-gray-900 focus:outline-none transition-all placeholder-gray-600"
         />
         <button 
             onClick={() => removeTrade(trade.id)}
-            className="absolute right-2 top-2 text-gray-600 hover:text-red-500"
-            title="删除此记录"
+            className="absolute right-2 top-1.5 text-gray-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="删除"
         >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            <Trash2 size={14} />
         </button>
       </div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-crypto-dark text-gray-200 font-sans pb-10">
+    <div className="min-h-screen bg-crypto-dark text-gray-200 font-sans pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-crypto-dark shadow-md border-b border-gray-800">
-        <div className="p-4 flex justify-between items-center max-w-7xl mx-auto w-full">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <span className="text-3xl">📒</span>
-            Tiney Crypto Diary
-          </h1>
-          <div className="flex gap-4 text-sm font-mono items-center">
+      <header className="sticky top-0 z-50 bg-crypto-dark/95 backdrop-blur-md border-b border-gray-800 shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 h-16 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <div className="bg-gradient-to-tr from-blue-600 to-cyan-400 p-2 rounded-lg text-white shadow-lg shadow-blue-500/20">
+              <NotebookPen size={20} />
+            </div>
+            <h1 className="text-xl font-bold text-white tracking-tight hidden sm:block">
+              Crypto<span className="text-crypto-accent">Diary</span>
+            </h1>
+          </div>
+          
+          <div className="flex gap-3 text-sm">
             {/* Realized PnL */}
-            <div className="bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-700">
-              <span className="text-gray-400 text-xs block">已实现 (Realized)</span>
-              <span className={`font-bold ${calculateTotalRealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
-                ${calculateTotalRealizedPnL().toFixed(2)}
-              </span>
+            <div className="flex items-center gap-2 bg-gray-800/50 px-3 py-1.5 rounded-full border border-gray-700">
+              <Wallet size={14} className="text-gray-400" />
+              <div className="flex flex-col sm:flex-row sm:gap-2 items-baseline">
+                <span className="text-[10px] text-gray-500 uppercase font-bold">已落袋</span>
+                <span className={`font-mono font-bold leading-none ${calculateTotalRealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
+                  ${calculateTotalRealizedPnL().toFixed(2)}
+                </span>
+              </div>
             </div>
             
-            {/* Unrealized PnL with Refresh Button */}
+            {/* Unrealized PnL */}
             {holdingTrades.length > 0 && (
-              <div className="flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-900/50">
-                <div>
-                  <span className="text-blue-300 text-xs block">持仓浮盈 (Unrealized)</span>
-                  <span className={`font-bold ${calculateTotalUnrealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
+              <div className="flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-full border border-blue-500/30">
+                <Activity size={14} className="text-blue-400" />
+                <div className="flex flex-col sm:flex-row sm:gap-2 items-baseline">
+                  <span className="text-[10px] text-blue-300 uppercase font-bold">持仓中</span>
+                  <span className={`font-mono font-bold leading-none ${calculateTotalUnrealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
                     ${calculateTotalUnrealizedPnL().toFixed(2)}
                   </span>
                 </div>
                 <button 
                   onClick={refreshPrices}
                   disabled={refreshing}
-                  className={`p-1.5 rounded-full hover:bg-blue-800/50 transition-colors ${refreshing ? 'animate-spin opacity-50' : ''}`}
-                  title="刷新持仓现价"
+                  className={`ml-1 p-1 rounded-full hover:bg-blue-800/50 transition-colors ${refreshing ? 'animate-spin text-white' : 'text-blue-400'}`}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                  <RefreshCw size={12} />
                 </button>
               </div>
             )}
@@ -243,75 +289,111 @@ const App: React.FC = () => {
 
       <main className="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Left Column: Calculator & Calendar */}
+        {/* Left Column */}
         <div className="lg:col-span-4 space-y-6">
-          <section>
-            <h2 className="text-lg font-semibold mb-3 text-gray-300 flex items-center">
-              🧮 交易/持仓记录
-            </h2>
-            <TradeCalculator onAddTrade={addTrade} />
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold mb-3 text-gray-300 flex items-center">
-              📅 已实现盈亏日历
-            </h2>
-            {/* Note: Calendar typically only tracks REALIZED gains */}
-            <Calendar trades={closedTrades} />
-          </section>
+          <TradeCalculator onAddTrade={addTrade} />
+          
+          <div className="bg-crypto-card rounded-xl border border-gray-700 p-4 shadow-lg">
+             <div className="flex items-center gap-2 mb-4 text-white font-semibold">
+                <Clock size={18} className="text-crypto-accent" />
+                <span>收益日历</span>
+             </div>
+             <Calendar trades={closedTrades} />
+          </div>
         </div>
 
-        {/* Right Column: Daily Summary & Trade List */}
+        {/* Right Column */}
         <div className="lg:col-span-8 flex flex-col h-full space-y-6">
           
-          {/* Daily Summary Input */}
-          <section className="bg-crypto-card p-4 rounded-xl border border-gray-700 shadow-sm">
-             <div className="flex justify-between items-center mb-2">
-                <h2 className="text-lg font-semibold text-white">📝 今日复盘总结</h2>
+          {/* Daily Summary */}
+          <section className="bg-crypto-card p-5 rounded-xl border border-gray-700 shadow-lg relative overflow-hidden group">
+             <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
+               <FileText size={100} />
+             </div>
+             <div className="flex justify-between items-center mb-3 relative z-10">
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <span className="bg-emerald-500/20 text-emerald-400 p-1 rounded"><NotebookPen size={16}/></span>
+                  今日复盘
+                </h2>
                 <button 
                   onClick={handleGenerate}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium transition-colors flex items-center gap-1"
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 shadow-lg shadow-emerald-900/20"
                 >
-                  <span>⬇️</span> 一键生成 Markdown
+                  <FileText size={14} /> 生成报告
                 </button>
              </div>
              <textarea
-                className="w-full h-24 bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-sm text-gray-300 focus:outline-none focus:border-crypto-accent resize-none placeholder-gray-600"
-                placeholder="在此写下今天的整体市场观察、情绪总结或策略反思（将包含在导出报告中）..."
+                className="w-full h-28 bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-sm text-gray-200 focus:outline-none focus:border-crypto-accent focus:ring-1 focus:ring-crypto-accent/50 resize-none placeholder-gray-600 custom-scrollbar relative z-10"
+                placeholder="记录今日的市场情绪、关键点位观察或策略调整..."
                 value={dailySummary}
                 onChange={(e) => setDailySummary(e.target.value)}
               />
           </section>
 
-          {/* Trade List Container */}
-          <div className="flex-1 bg-crypto-card rounded-xl border border-gray-700 flex flex-col shadow-sm min-h-[500px]">
-            <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-               <h2 className="text-lg font-semibold text-white">📋 交易列表 ({trades.length})</h2>
+          {/* Markdown Preview */}
+          {showMarkdown && (
+            <div className="bg-gray-900 border border-gray-700 rounded-xl p-4 animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-semibold text-gray-400 flex items-center gap-2">
+                  <FileText size={14}/> Markdown 预览
+                </h3>
+                <button
+                  onClick={handleCopy}
+                  className={`text-xs px-2 py-1 rounded flex items-center gap-1 transition-colors ${
+                    copySuccess ? 'text-green-400 bg-green-900/20' : 'text-crypto-accent hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {copySuccess ? <CheckCircle size={12}/> : <Copy size={12}/>}
+                  {copySuccess ? '已复制' : '复制全部'}
+                </button>
+              </div>
+              <textarea 
+                readOnly
+                value={markdownContent}
+                className="w-full h-48 bg-black/40 border border-gray-800 rounded p-3 text-xs font-mono text-gray-300 focus:outline-none custom-scrollbar"
+              />
+            </div>
+          )}
+
+          {/* Trade List */}
+          <div className="bg-crypto-card rounded-xl border border-gray-700 flex flex-col shadow-lg overflow-hidden min-h-[400px]">
+            <div className="p-4 border-b border-gray-700 bg-gray-800/30 flex justify-between items-center">
+               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                 <span className="bg-indigo-500/20 text-indigo-400 p-1 rounded"><TrendingUp size={16}/></span>
+                 交易记录
+               </h2>
+               <span className="text-xs text-gray-500 font-mono bg-gray-800 px-2 py-1 rounded">
+                 Total: {trades.length}
+               </span>
             </div>
             
-            <div className="flex-1 overflow-auto max-h-[800px] custom-scrollbar">
+            <div className="flex-1 overflow-auto max-h-[800px] custom-scrollbar p-2">
               {trades.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-gray-500 py-12">
-                  <p>暂无记录，请在左侧添加交易或持仓。</p>
+                <div className="flex flex-col items-center justify-center text-gray-500 h-64">
+                  <div className="bg-gray-800 rounded-full p-4 mb-3">
+                    <TrendingUp size={32} className="text-gray-600" />
+                  </div>
+                  <p>暂无记录</p>
+                  <p className="text-xs mt-1">左侧添加第一笔交易</p>
                 </div>
               ) : (
-                <div className="divide-y divide-gray-700">
-                  {/* Holding Section (if any) */}
+                <div className="space-y-4">
+                  {/* Holding Section */}
                   {holdingTrades.length > 0 && (
-                    <div className="bg-blue-900/5">
-                      <div className="px-4 py-2 text-xs font-bold text-blue-400 uppercase tracking-wider bg-blue-900/20">
-                        ⏳ 当前持仓 / 挂单 (Open Positions)
+                    <div className="space-y-1">
+                      <div className="px-2 py-1 text-[10px] font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                        <Clock size={10} /> 持仓中 / 挂单
                       </div>
                       {holdingTrades.map(trade => <TradeCard key={trade.id} trade={trade} />)}
                     </div>
                   )}
 
-                  {/* Closed Section (if any) */}
+                  {/* Closed Section */}
                   {closedTrades.length > 0 && (
-                    <div className="">
+                    <div className="space-y-1">
                        {holdingTrades.length > 0 && (
-                          <div className="px-4 py-2 text-xs font-bold text-gray-500 uppercase tracking-wider bg-gray-800">
-                            ✅ 已平仓 (Closed)
+                          <div className="px-2 py-1 mt-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                            <CheckCircle size={10} /> 已平仓历史
                           </div>
                        )}
                        {closedTrades.map(trade => <TradeCard key={trade.id} trade={trade} />)}
@@ -322,28 +404,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Markdown Output Area */}
-          {showMarkdown && (
-            <div className="bg-gray-900 border border-gray-700 rounded-xl p-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-sm font-semibold text-gray-400">Markdown 预览</h3>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(markdownContent);
-                    alert('已复制到剪贴板！');
-                  }}
-                  className="text-xs text-crypto-accent hover:text-white"
-                >
-                  📋 复制全部
-                </button>
-              </div>
-              <textarea 
-                readOnly
-                value={markdownContent}
-                className="w-full h-64 bg-black/40 border border-gray-800 rounded p-3 text-xs font-mono text-gray-300 focus:outline-none custom-scrollbar"
-              />
-            </div>
-          )}
         </div>
       </main>
     </div>
