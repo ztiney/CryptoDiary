@@ -13,14 +13,15 @@ export interface CryptoPrice {
 
 export interface TradeRecord {
   id: string;
+  coinId?: string; // 用于API刷新价格
   symbol: string;
   type: TradeType;
   direction: PositionDirection;
   status: TradeStatus;
   entryPrice: number;
-  exitPrice: number; // For HOLDING, this represents Current Price
-  amount: number; // Represents Investment Amount (USDT) for Spot, or Margin (USDT) for Futures
-  leverage: number; // 1 for spot
+  exitPrice: number; // 持仓时代表当前价格
+  amount: number; // 现货为投入U，合约为保证金U
+  leverage: number; 
   pnl: number;
   roi: number;
   note: string;
@@ -29,6 +30,7 @@ export interface TradeRecord {
 
 export interface CalculatorState {
   symbol: string;
+  coinId?: string;
   entryPrice: string;
   exitPrice: string;
   amount: string;

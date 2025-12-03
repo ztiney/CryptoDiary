@@ -9,6 +9,7 @@ interface TradeCalculatorProps {
 const TradeCalculator: React.FC<TradeCalculatorProps> = ({ onAddTrade }) => {
   const [state, setState] = useState<CalculatorState>({
     symbol: '',
+    coinId: '',
     entryPrice: '',
     exitPrice: '',
     amount: '',
@@ -118,7 +119,11 @@ const TradeCalculator: React.FC<TradeCalculatorProps> = ({ onAddTrade }) => {
   };
 
   const selectCoin = (coin: CryptoPrice) => {
-    setState(s => ({ ...s, symbol: coin.symbol.toUpperCase() }));
+    setState(s => ({ 
+      ...s, 
+      symbol: coin.symbol.toUpperCase(),
+      coinId: coin.id 
+    }));
     setSelectedCoinPrice(coin.current_price);
     setShowDropdown(false);
   };
@@ -129,10 +134,15 @@ const TradeCalculator: React.FC<TradeCalculatorProps> = ({ onAddTrade }) => {
     }
   };
 
+  const generateId = () => {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trade: TradeRecord = {
-      id: crypto.randomUUID(),
+      id: generateId(),
+      coinId: state.coinId,
       symbol: state.symbol.toUpperCase(),
       type: state.type,
       direction: state.type === 'SPOT' ? 'LONG' : state.direction,

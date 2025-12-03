@@ -1,14 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import TradeCalculator from './components/TradeCalculator';
 import Calendar from './components/Calendar';
-import { TradeRecord } from './types';
+import { TradeRecord, CryptoPrice } from './types';
 
 const App: React.FC = () => {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [dailySummary, setDailySummary] = useState('');
   const [showMarkdown, setShowMarkdown] = useState(false);
   const [markdownContent, setMarkdownContent] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const addTrade = (trade: TradeRecord) => {
     setTrades([trade, ...trades]);
@@ -21,6 +22,71 @@ const App: React.FC = () => {
   const updateTradeNote = (id: string, note: string) => {
     setTrades(trades.map(t => t.id === id ? { ...t, note } : t));
   };
+
+  // Logic to refresh prices for HOLDING trades
+  const refreshPrices = async () => {
+    // Only refresh holding trades that have a coinId
+    const holdingWithIds = trades.filter(t => t.status === 'HOLDING' && t.coinId);
+    if (holdingWithIds.length === 0) return;
+
+    setRefreshing(true);
+    const ids = Array.from(new Set(holdingWithIds.map(t => t.coinId))).join(',');
+
+    try {
+      const response = await fetch(
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc&per_page=100&page=1&sparkline=false`
+      );
+      
+      if (response.ok) {
+        const data: CryptoPrice[] = await response.json();
+        const priceMap = new Map(data.map(c => [c.id, c.current_price]));
+
+        // Update trades with new prices and recalculate PnL/ROI
+        setTrades(prevTrades => prevTrades.map(trade => {
+          if (trade.status === 'HOLDING' && trade.coinId && priceMap.has(trade.coinId)) {
+            const currentPrice = priceMap.get(trade.coinId)!;
+            
+            // Recalculate Logic (Same as in Calculator)
+            let pnl = 0;
+            let roi = 0;
+            
+            if (trade.type === 'SPOT') {
+               const coinSize = trade.amount / trade.entryPrice;
+               pnl = (currentPrice - trade.entryPrice) * coinSize;
+               roi = (pnl / trade.amount) * 100;
+            } else {
+               const positionValue = trade.amount * trade.leverage;
+               const coinSize = positionValue / trade.entryPrice;
+               if (trade.direction === 'LONG') {
+                 pnl = (currentPrice - trade.entryPrice) * coinSize;
+               } else {
+                 pnl = (trade.entryPrice - currentPrice) * coinSize;
+               }
+               roi = trade.amount !== 0 ? (pnl / trade.amount) * 100 : 0;
+            }
+
+            return {
+              ...trade,
+              exitPrice: currentPrice, // Update "Exit Price" to mean "Current Price" for holdings
+              pnl,
+              roi
+            };
+          }
+          return trade;
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to refresh prices", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Auto Refresh Interval
+  useEffect(() => {
+    const interval = setInterval(refreshPrices, 60000); // 60s
+    return () => clearInterval(interval);
+  }, [trades]); // Dependency on trades to ensure we have latest list
 
   // Split trades
   const closedTrades = trades.filter(t => t.status === 'CLOSED');
@@ -95,7 +161,10 @@ const App: React.FC = () => {
               {trade.type === 'FUTURES' ? (trade.direction === 'LONG' ? '做多' : '做空') : '现货'}
             </span>
             {trade.status === 'HOLDING' && (
-              <span className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">持仓中</span>
+              <span className="flex items-center gap-1 text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded">
+                持仓中
+                {trade.coinId && <span className="animate-pulse w-1.5 h-1.5 rounded-full bg-green-300"></span>}
+              </span>
             )}
             <span className="text-xs text-gray-500">
               {trade.type === 'FUTURES' ? `${trade.leverage}x` : `投入: $${trade.amount}`}
@@ -140,19 +209,32 @@ const App: React.FC = () => {
             <span className="text-3xl">📒</span>
             CryptoJournal
           </h1>
-          <div className="flex gap-4 text-sm font-mono">
+          <div className="flex gap-4 text-sm font-mono items-center">
+            {/* Realized PnL */}
             <div className="bg-gray-900 px-3 py-1.5 rounded-lg border border-gray-700">
               <span className="text-gray-400 text-xs block">已实现 (Realized)</span>
               <span className={`font-bold ${calculateTotalRealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
                 ${calculateTotalRealizedPnL().toFixed(2)}
               </span>
             </div>
+            
+            {/* Unrealized PnL with Refresh Button */}
             {holdingTrades.length > 0 && (
-              <div className="bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-900/50">
-                <span className="text-blue-300 text-xs block">持仓浮盈 (Unrealized)</span>
-                <span className={`font-bold ${calculateTotalUnrealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
-                  ${calculateTotalUnrealizedPnL().toFixed(2)}
-                </span>
+              <div className="flex items-center gap-2 bg-blue-900/20 px-3 py-1.5 rounded-lg border border-blue-900/50">
+                <div>
+                  <span className="text-blue-300 text-xs block">持仓浮盈 (Unrealized)</span>
+                  <span className={`font-bold ${calculateTotalUnrealizedPnL() >= 0 ? 'text-crypto-up' : 'text-crypto-down'}`}>
+                    ${calculateTotalUnrealizedPnL().toFixed(2)}
+                  </span>
+                </div>
+                <button 
+                  onClick={refreshPrices}
+                  disabled={refreshing}
+                  className={`p-1.5 rounded-full hover:bg-blue-800/50 transition-colors ${refreshing ? 'animate-spin opacity-50' : ''}`}
+                  title="刷新持仓现价"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                </button>
               </div>
             )}
           </div>
