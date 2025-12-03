@@ -207,7 +207,7 @@ const App: React.FC = () => {
         <div className="p-4 flex justify-between items-center max-w-7xl mx-auto w-full">
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
             <span className="text-3xl">📒</span>
-            CryptoJournal
+            Tiney Crypto Diary
           </h1>
           <div className="flex gap-4 text-sm font-mono items-center">
             {/* Realized PnL */}
